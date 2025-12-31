@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from ghostty_automator.errors import (
     ConnectionError,
     GhosttyError,

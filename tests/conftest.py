@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import struct
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -34,17 +33,7 @@ def mock_list_surfaces_response(mock_surface_data) -> dict[str, Any]:
     """Sample list_surfaces response."""
     return {
         "ok": True,
-        "data": {
-            "windows": [
-                {
-                    "tabs": [
-                        {
-                            "surfaces": [mock_surface_data]
-                        }
-                    ]
-                }
-            ]
-        },
+        "data": {"windows": [{"tabs": [{"surfaces": [mock_surface_data]}]}]},
     }
 
 

@@ -6,10 +6,29 @@ import re
 from typing import TYPE_CHECKING
 
 from ghostty_automator.errors import TimeoutError
-from ghostty_automator.protocol import DEFAULT_TIMEOUT_MS
+from ghostty_automator.protocol import DEFAULT_TIMEOUT_MS, Screen
 
 if TYPE_CHECKING:
     from ghostty_automator._async.terminal import Terminal
+
+
+_MAX_ASSERTION_LINES = 80
+_MAX_ASSERTION_CHARS = 8_000
+
+
+def _truncate_screen(screen: Screen) -> str:
+    text = screen.plain_text
+    lines = text.splitlines()
+
+    if len(lines) > _MAX_ASSERTION_LINES:
+        omitted = len(lines) - _MAX_ASSERTION_LINES
+        lines = [f"… ({omitted} lines truncated) …", *lines[-_MAX_ASSERTION_LINES:]]
+        text = "\n".join(lines)
+
+    if len(text) > _MAX_ASSERTION_CHARS:
+        text = "… (truncated) …\n" + text[-_MAX_ASSERTION_CHARS:]
+
+    return text
 
 
 class TerminalExpect:
@@ -45,7 +64,7 @@ class TerminalExpect:
             screen = await self._terminal.screen()
             raise AssertionError(
                 f"Expected terminal to contain {text!r}\n\n"
-                f"Actual content:\n{screen.text}"
+                f"Actual content:\n{_truncate_screen(screen)}"
             ) from e
 
     async def not_to_contain(
@@ -72,7 +91,7 @@ class TerminalExpect:
             if text in screen.text:
                 raise AssertionError(
                     f"Expected terminal NOT to contain {text!r}\n\n"
-                    f"Actual content:\n{screen.text}"
+                    f"Actual content:\n{_truncate_screen(screen)}"
                 )
             await anyio.sleep(0.1)
 
@@ -105,7 +124,7 @@ class TerminalExpect:
             screen = await self._terminal.screen()
             raise AssertionError(
                 f"Expected terminal to match pattern {pattern!r}\n\n"
-                f"Actual content:\n{screen.text}"
+                f"Actual content:\n{_truncate_screen(screen)}"
             ) from e
 
     async def to_have_title(
@@ -213,5 +232,5 @@ class TerminalExpect:
             screen = await self._terminal.screen()
             raise AssertionError(
                 f"Expected shell prompt to be visible\n\n"
-                f"Actual content:\n{screen.text}"
+                f"Actual content:\n{_truncate_screen(screen)}"
             ) from e

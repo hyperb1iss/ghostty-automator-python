@@ -29,7 +29,7 @@ from ghostty_automator.errors import (
     IPCError,
     TimeoutError,
 )
-from ghostty_automator.protocol import Screen, Surface
+from ghostty_automator.protocol import Screen, Surface, strip_ansi
 
 __all__ = [
     "ConnectionError",
@@ -40,6 +40,7 @@ __all__ = [
     "Surface",
     "Terminal",
     "TimeoutError",
+    "strip_ansi",
 ]
 
 __version__ = "0.1.0"

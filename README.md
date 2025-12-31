@@ -94,6 +94,13 @@ async with Ghostty.connect() as ghostty:
     await terminal.screenshot("debug.png")
 ```
 
+If you get a connection error about “insecure permissions”, either fix the socket permissions or connect with:
+
+```python
+async with Ghostty.connect(validate_socket=False) as ghostty:
+    ...
+```
+
 ### Sync API
 
 ```python
@@ -108,10 +115,9 @@ with Ghostty.connect() as ghostty:
 ### Chaining
 
 ```python
-await (terminal
-    .send("npm test")
-    .wait_for_text("PASS", timeout=30_000)
-    .screenshot("tests-passed.png"))
+await terminal.send("npm test")
+await terminal.wait_for_text("PASS", timeout=30_000)
+await terminal.screenshot("tests-passed.png")
 ```
 
 ## 📖 API Reference

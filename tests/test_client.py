@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from ghostty_automator._async.client import Ghostty, Terminals
-from ghostty_automator.errors import ConnectionError, IPCError
+from ghostty_automator.errors import IPCError
 from ghostty_automator.protocol import Surface
 
 

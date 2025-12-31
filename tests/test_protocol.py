@@ -5,8 +5,6 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-import pytest
-
 from ghostty_automator.protocol import (
     Screen,
     Surface,

@@ -58,9 +58,7 @@ class TerminalExpect:
         """Assert that terminal does NOT contain the given text."""
         _run_sync(self._async_expect.not_to_contain(text, timeout=timeout))
 
-    def to_match(
-        self, pattern: str, *, timeout: int = DEFAULT_TIMEOUT_MS
-    ) -> re.Match[str]:
+    def to_match(self, pattern: str, *, timeout: int = DEFAULT_TIMEOUT_MS) -> re.Match[str]:
         """Assert that terminal matches the given regex pattern."""
         return _run_sync(self._async_expect.to_match(pattern, timeout=timeout))
 
@@ -174,9 +172,7 @@ class Terminal:
         regex: bool = False,
     ) -> Terminal:
         """Wait for text to appear on screen."""
-        _run_sync(
-            self._async_terminal.wait_for_text(pattern, timeout=timeout, regex=regex)
-        )
+        _run_sync(self._async_terminal.wait_for_text(pattern, timeout=timeout, regex=regex))
         return self
 
     def wait_for_prompt(
@@ -186,9 +182,7 @@ class Terminal:
         timeout: int = DEFAULT_TIMEOUT_MS,
     ) -> Terminal:
         """Wait for a shell prompt to appear."""
-        _run_sync(
-            self._async_terminal.wait_for_prompt(prompt_pattern, timeout=timeout)
-        )
+        _run_sync(self._async_terminal.wait_for_prompt(prompt_pattern, timeout=timeout))
         return self
 
     def wait_for_idle(
@@ -198,9 +192,7 @@ class Terminal:
         timeout: int = DEFAULT_TIMEOUT_MS,
     ) -> Terminal:
         """Wait for screen content to stabilize."""
-        _run_sync(
-            self._async_terminal.wait_for_idle(stable_ms, timeout=timeout)
-        )
+        _run_sync(self._async_terminal.wait_for_idle(stable_ms, timeout=timeout))
         return self
 
     # === Actions ===
@@ -298,11 +290,16 @@ class Ghostty:
         cls,
         socket_path: str | Path | None = None,
         app_class: str | None = None,
+        *,
+        request_timeout_ms: int = DEFAULT_TIMEOUT_MS,
+        validate_socket: bool = True,
     ) -> Ghostty:
         """Create a connected Ghostty client."""
         async_ghostty = async_client.Ghostty.connect(
             socket_path=socket_path,
             app_class=app_class,
+            request_timeout_ms=request_timeout_ms,
+            validate_socket=validate_socket,
         )
         return cls(async_ghostty)
 

@@ -103,13 +103,21 @@ ignore = [
     "PLC0415", # Deferred imports (avoid circular imports)
     "S108",    # /tmp usage (necessary for socket path fallback)
     "ASYNC109", # timeout param is our API design (Playwright-style)
+    "RUF001",  # Unicode characters intentional for prompt matching
+    "RUF002",  # Unicode characters intentional in docstrings
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = [
     "S101",    # Assert allowed in tests
+    "S105",    # pwd is working directory, not password
+    "S106",    # pwd is working directory, not password
     "ARG001",  # Unused function args (fixtures)
     "PLR2004", # Magic values in tests OK
+    "RET504",  # Unnecessary assignment OK in tests
+]
+"examples/**/*.py" = [
+    "T201",    # Print statements are the point of examples
 ]
 
 [tool.ruff.lint.isort]
@@ -176,6 +184,8 @@ reportMissingImports = true
 reportMissingTypeStubs = false
 # Internal classes intentionally access each other's private methods
 reportPrivateUsage = false
+venvPath = "."
+venv = ".venv"
 
 [dependency-groups]
 dev = [

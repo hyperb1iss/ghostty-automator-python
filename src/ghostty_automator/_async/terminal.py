@@ -89,9 +89,7 @@ class Terminal:
 
         Returns self for chaining.
         """
-        await self._ghostty._send_request(
-            "send_text", {"surface_id": self.id, "text": text + "\r"}
-        )
+        await self._ghostty._send_request("send_text", {"surface_id": self.id, "text": text + "\r"})
         return self
 
     async def type(self, text: str, delay_ms: int = 0) -> Terminal:
@@ -112,9 +110,7 @@ class Terminal:
                 )
                 await anyio.sleep(delay_ms / 1000)
         else:
-            await self._ghostty._send_request(
-                "send_text", {"surface_id": self.id, "text": text}
-            )
+            await self._ghostty._send_request("send_text", {"surface_id": self.id, "text": text})
         return self
 
     async def press(self, key: str) -> Terminal:
@@ -161,9 +157,7 @@ class Terminal:
         else:
             text = key_map.get(key, key)
 
-        await self._ghostty._send_request(
-            "send_text", {"surface_id": self.id, "text": text}
-        )
+        await self._ghostty._send_request("send_text", {"surface_id": self.id, "text": text})
         return self
 
     # === Reading Screen ===
@@ -235,11 +229,14 @@ class Terminal:
 
     async def wait_for_prompt(
         self,
-        prompt_pattern: str = r"[$#>%]\s*$",
+        prompt_pattern: str = r"[$#>%➤❯λ»›]\s*",
         *,
         timeout: int = DEFAULT_TIMEOUT_MS,
     ) -> Terminal:
         """Wait for a shell prompt to appear.
+
+        Uses plain text (ANSI stripped) for matching to handle fancy prompts.
+        Default pattern matches common prompt endings: $ # > % ➤ ❯ λ » ›
 
         Args:
             prompt_pattern: Regex pattern matching shell prompts.
@@ -247,7 +244,27 @@ class Terminal:
 
         Returns self for chaining.
         """
-        return await self.wait_for_text(prompt_pattern, timeout=timeout, regex=True)
+        import anyio
+
+        deadline = anyio.current_time() + (timeout / 1000)
+        compiled = re.compile(prompt_pattern)
+
+        while True:
+            screen = await self.screen()
+            # Use plain_text to strip ANSI escape codes from fancy prompts
+            # Also strip trailing replacement characters (U+FFFD) that appear
+            # in uninitialized terminal space
+            text = screen.plain_text.rstrip("\ufffd")
+            if compiled.search(text):
+                return self
+
+            if anyio.current_time() >= deadline:
+                raise TimeoutError(
+                    f"Timeout waiting for prompt: {prompt_pattern!r}",
+                    timeout_ms=timeout,
+                )
+
+            await anyio.sleep(0.1)
 
     async def wait_for_idle(
         self,
@@ -376,6 +393,92 @@ class Terminal:
         if mods is not None:
             payload["mods"] = mods
         await self._ghostty._send_request("send_mouse", payload)
+
+    async def scroll(
+        self,
+        delta_y: float = 0.0,
+        delta_x: float = 0.0,
+        mods: str | None = None,
+    ) -> Terminal:
+        """Scroll the terminal.
+
+        Args:
+            delta_y: Vertical scroll delta (positive = down).
+            delta_x: Horizontal scroll delta (positive = right).
+            mods: Modifiers ("shift", "ctrl", "alt", "super").
+
+        Returns self for chaining.
+        """
+        payload: dict[str, Any] = {"surface_id": self.id, "x": delta_x, "y": delta_y}
+        if mods is not None:
+            payload["mods"] = mods
+        await self._ghostty._send_request("send_scroll", payload)
+        return self
+
+    async def drag(
+        self,
+        from_x: float,
+        from_y: float,
+        to_x: float,
+        to_y: float,
+        button: str = "left",
+        steps: int = 10,
+        mods: str | None = None,
+    ) -> Terminal:
+        """Drag from one position to another.
+
+        Args:
+            from_x: Starting X position in pixels.
+            from_y: Starting Y position in pixels.
+            to_x: Ending X position in pixels.
+            to_y: Ending Y position in pixels.
+            button: Mouse button to hold during drag.
+            steps: Number of intermediate positions for smooth drag.
+            mods: Modifiers ("shift", "ctrl", "alt", "super").
+
+        Returns self for chaining.
+        """
+        import anyio
+
+        # Press at start position
+        await self._send_mouse(from_x, from_y, button, "press", mods)
+        await anyio.sleep(0.01)
+
+        # Move through intermediate positions
+        for i in range(1, steps + 1):
+            t = i / steps
+            x = from_x + (to_x - from_x) * t
+            y = from_y + (to_y - from_y) * t
+            await self._send_mouse(x, y, None, None, mods)
+            await anyio.sleep(0.01)
+
+        # Release at end position
+        await self._send_mouse(to_x, to_y, button, "release", mods)
+        return self
+
+    async def double_click(
+        self,
+        x: float,
+        y: float,
+        button: str = "left",
+        mods: str | None = None,
+    ) -> Terminal:
+        """Double-click at a position.
+
+        Args:
+            x: X position in pixels.
+            y: Y position in pixels.
+            button: Mouse button.
+            mods: Modifiers.
+
+        Returns self for chaining.
+        """
+        import anyio
+
+        await self.click(x, y, button, mods)
+        await anyio.sleep(0.05)
+        await self.click(x, y, button, mods)
+        return self
 
     # === Refresh ===
 

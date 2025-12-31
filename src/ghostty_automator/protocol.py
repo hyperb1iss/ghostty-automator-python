@@ -3,9 +3,24 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+# ANSI escape sequence pattern (SGR, CSI, OSC, etc.)
+#
+# Supports OSC terminated by BEL (\\x07) or String Terminator (ESC \\).
+ANSI_PATTERN = re.compile(r"\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\))")
+
+
+def _surface_list() -> list[Surface]:
+    return []
+
+
+def _tab_list() -> list[Tab]:
+    return []
+
 
 # =============================================================================
 # Constants
@@ -47,7 +62,7 @@ class Surface:
 class Tab:
     """A tab containing one or more surfaces."""
 
-    surfaces: list[Surface] = field(default_factory=list)
+    surfaces: list[Surface] = field(default_factory=_surface_list)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Tab:
@@ -58,7 +73,7 @@ class Tab:
 class Window:
     """A window containing one or more tabs."""
 
-    tabs: list[Tab] = field(default_factory=list)
+    tabs: list[Tab] = field(default_factory=_tab_list)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Window:
@@ -78,6 +93,11 @@ class Screen:
         """Get screen content as list of lines."""
         return self.text.splitlines()
 
+    @property
+    def plain_text(self) -> str:
+        """Get text with ANSI escape codes stripped."""
+        return strip_ansi(self.text)
+
     def contains(self, pattern: str) -> bool:
         """Check if screen contains the given text."""
         return pattern in self.text
@@ -86,6 +106,11 @@ class Screen:
 # =============================================================================
 # Utilities
 # =============================================================================
+
+
+def strip_ansi(text: str) -> str:
+    """Strip ANSI escape sequences from text."""
+    return ANSI_PATTERN.sub("", text)
 
 
 def resolve_socket_path(socket_path: str | Path | None = None) -> Path:

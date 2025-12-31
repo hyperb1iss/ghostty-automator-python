@@ -8,7 +8,7 @@ import pytest
 
 from ghostty_automator._async.expect import TerminalExpect
 from ghostty_automator._async.terminal import Terminal
-from ghostty_automator.protocol import Screen, Surface
+from ghostty_automator.protocol import Surface
 
 
 @pytest.fixture
