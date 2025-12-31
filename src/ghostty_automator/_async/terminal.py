@@ -1,0 +1,392 @@
+"""Terminal class with Playwright-style automation API."""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+from ghostty_automator.errors import TimeoutError
+from ghostty_automator.protocol import DEFAULT_TIMEOUT_MS, Screen, Surface
+
+if TYPE_CHECKING:
+    from ghostty_automator._async.client import Ghostty
+    from ghostty_automator._async.expect import TerminalExpect
+
+
+class Terminal:
+    """A terminal surface with Playwright-style automation API.
+
+    Example:
+        >>> async with Ghostty.connect() as ghostty:
+        ...     terminal = await ghostty.terminals.first()
+        ...
+        ...     # Send commands
+        ...     await terminal.send("cd ~/projects")
+        ...     await terminal.send("ls -la")
+        ...
+        ...     # Wait for output
+        ...     await terminal.wait_for_text("package.json")
+        ...
+        ...     # Assertions
+        ...     await terminal.expect.to_contain("src/")
+        ...
+        ...     # Screenshots
+        ...     await terminal.screenshot("debug.png")
+    """
+
+    def __init__(self, ghostty: Ghostty, surface: Surface) -> None:
+        self._ghostty = ghostty
+        self._surface = surface
+        self._expect: TerminalExpect | None = None
+
+    @property
+    def id(self) -> str:
+        """Surface ID."""
+        return self._surface.id
+
+    @property
+    def title(self) -> str:
+        """Window/tab title."""
+        return self._surface.title
+
+    @property
+    def pwd(self) -> str:
+        """Current working directory."""
+        return self._surface.pwd
+
+    @property
+    def rows(self) -> int:
+        """Number of rows."""
+        return self._surface.rows
+
+    @property
+    def cols(self) -> int:
+        """Number of columns."""
+        return self._surface.cols
+
+    @property
+    def focused(self) -> bool:
+        """Whether this terminal is focused."""
+        return self._surface.focused
+
+    @property
+    def expect(self) -> TerminalExpect:
+        """Assertion helpers for this terminal."""
+        from ghostty_automator._async.expect import TerminalExpect
+
+        if self._expect is None:
+            self._expect = TerminalExpect(self)
+        return self._expect
+
+    # === Sending Input ===
+
+    async def send(self, text: str) -> Terminal:
+        """Send text to the terminal and press Enter.
+
+        This is the primary way to run commands:
+            >>> await terminal.send("ls -la")
+
+        Returns self for chaining.
+        """
+        await self._ghostty._send_request(
+            "send_text", {"surface_id": self.id, "text": text + "\r"}
+        )
+        return self
+
+    async def type(self, text: str, delay_ms: int = 0) -> Terminal:
+        """Type text character by character (no Enter).
+
+        Args:
+            text: Text to type.
+            delay_ms: Delay between keystrokes in milliseconds.
+
+        Returns self for chaining.
+        """
+        import anyio
+
+        if delay_ms > 0:
+            for char in text:
+                await self._ghostty._send_request(
+                    "send_text", {"surface_id": self.id, "text": char}
+                )
+                await anyio.sleep(delay_ms / 1000)
+        else:
+            await self._ghostty._send_request(
+                "send_text", {"surface_id": self.id, "text": text}
+            )
+        return self
+
+    async def press(self, key: str) -> Terminal:
+        """Press a key.
+
+        Common keys:
+            - "Enter" -> \\r
+            - "Tab" -> \\t
+            - "Escape" -> \\x1b
+            - "Backspace" -> \\x7f
+            - "Up", "Down", "Left", "Right" -> ANSI escape sequences
+            - "Ctrl+C" -> \\x03
+
+        Returns self for chaining.
+        """
+        key_map = {
+            "Enter": "\r",
+            "Tab": "\t",
+            "Escape": "\x1b",
+            "Backspace": "\x7f",
+            "Delete": "\x1b[3~",
+            "Up": "\x1b[A",
+            "Down": "\x1b[B",
+            "Right": "\x1b[C",
+            "Left": "\x1b[D",
+            "Home": "\x1b[H",
+            "End": "\x1b[F",
+            "PageUp": "\x1b[5~",
+            "PageDown": "\x1b[6~",
+            "Ctrl+C": "\x03",
+            "Ctrl+D": "\x04",
+            "Ctrl+Z": "\x1a",
+            "Ctrl+L": "\x0c",
+        }
+
+        # Handle Ctrl+<key> pattern
+        if key.startswith("Ctrl+") and key not in key_map:
+            char = key[5:].upper()
+            if len(char) == 1 and "A" <= char <= "Z":
+                code = ord(char) - ord("A") + 1
+                text = chr(code)
+            else:
+                text = key
+        else:
+            text = key_map.get(key, key)
+
+        await self._ghostty._send_request(
+            "send_text", {"surface_id": self.id, "text": text}
+        )
+        return self
+
+    # === Reading Screen ===
+
+    async def screen(self, screen_type: str = "viewport") -> Screen:
+        """Get the current screen content.
+
+        Args:
+            screen_type: "viewport" for visible content, "screen" for full scrollback.
+
+        Returns:
+            Screen object with text content and cursor position.
+        """
+        response = await self._ghostty._send_request(
+            "get_screen", {"surface_id": self.id, "screen": screen_type}
+        )
+        data = response.get("data", {})
+        return Screen(
+            text=data.get("content", ""),
+            cursor_x=data.get("cursor_x", 0),
+            cursor_y=data.get("cursor_y", 0),
+        )
+
+    async def text(self) -> str:
+        """Get the current screen text (shorthand for screen().text)."""
+        return (await self.screen()).text
+
+    # === Waiting ===
+
+    async def wait_for_text(
+        self,
+        pattern: str,
+        *,
+        timeout: int = DEFAULT_TIMEOUT_MS,
+        regex: bool = False,
+    ) -> Terminal:
+        """Wait for text to appear on screen.
+
+        Args:
+            pattern: Text or regex pattern to wait for.
+            timeout: Timeout in milliseconds.
+            regex: If True, treat pattern as regex.
+
+        Returns self for chaining.
+
+        Raises:
+            TimeoutError: If text doesn't appear within timeout.
+        """
+        import anyio
+
+        deadline = anyio.current_time() + (timeout / 1000)
+        compiled = re.compile(pattern) if regex else None
+
+        while True:
+            screen = await self.screen()
+            if compiled is not None:
+                if compiled.search(screen.text):
+                    return self
+            elif pattern in screen.text:
+                return self
+
+            if anyio.current_time() >= deadline:
+                raise TimeoutError(
+                    f"Timeout waiting for text: {pattern!r}",
+                    timeout_ms=timeout,
+                )
+
+            await anyio.sleep(0.1)
+
+    async def wait_for_prompt(
+        self,
+        prompt_pattern: str = r"[$#>%]\s*$",
+        *,
+        timeout: int = DEFAULT_TIMEOUT_MS,
+    ) -> Terminal:
+        """Wait for a shell prompt to appear.
+
+        Args:
+            prompt_pattern: Regex pattern matching shell prompts.
+            timeout: Timeout in milliseconds.
+
+        Returns self for chaining.
+        """
+        return await self.wait_for_text(prompt_pattern, timeout=timeout, regex=True)
+
+    async def wait_for_idle(
+        self,
+        stable_ms: int = 500,
+        *,
+        timeout: int = DEFAULT_TIMEOUT_MS,
+    ) -> Terminal:
+        """Wait for screen content to stabilize.
+
+        Args:
+            stable_ms: How long content must be stable to consider idle.
+            timeout: Timeout in milliseconds.
+
+        Returns self for chaining.
+        """
+        import anyio
+
+        deadline = anyio.current_time() + (timeout / 1000)
+        stable_duration = stable_ms / 1000
+
+        last_content = ""
+        stable_since = anyio.current_time()
+
+        while True:
+            screen = await self.screen()
+            current_content = screen.text
+
+            now = anyio.current_time()
+
+            if current_content != last_content:
+                last_content = current_content
+                stable_since = now
+
+            if now - stable_since >= stable_duration:
+                return self
+
+            if now >= deadline:
+                raise TimeoutError(
+                    "Timeout waiting for screen to stabilize",
+                    timeout_ms=timeout,
+                )
+
+            await anyio.sleep(0.1)
+
+    # === Actions ===
+
+    async def focus(self) -> Terminal:
+        """Focus this terminal (bring window to front)."""
+        await self._ghostty._send_request("focus_surface", {"surface_id": self.id})
+        return self
+
+    async def close(self) -> None:
+        """Close this terminal."""
+        await self._ghostty._send_request("close_surface", {"surface_id": self.id})
+
+    async def resize(self, rows: int | None = None, cols: int | None = None) -> Terminal:
+        """Resize the terminal.
+
+        Args:
+            rows: New number of rows.
+            cols: New number of columns.
+
+        Returns self for chaining.
+        """
+        payload: dict[str, Any] = {"surface_id": self.id}
+        if rows is not None:
+            payload["rows"] = rows
+        if cols is not None:
+            payload["cols"] = cols
+        await self._ghostty._send_request("resize_surface", payload)
+        return self
+
+    async def screenshot(self, path: str | Path) -> Path:
+        """Take a screenshot of this terminal.
+
+        Args:
+            path: Where to save the screenshot.
+
+        Returns:
+            Path to the saved screenshot.
+        """
+        output_path = Path(path).resolve()
+        await self._ghostty._send_request(
+            "screenshot_surface",
+            {"surface_id": self.id, "output_path": str(output_path)},
+        )
+        return output_path
+
+    # === Mouse ===
+
+    async def click(
+        self,
+        x: float,
+        y: float,
+        button: str = "left",
+        mods: str | None = None,
+    ) -> Terminal:
+        """Click at a position in pixels.
+
+        Args:
+            x: X position in pixels.
+            y: Y position in pixels.
+            button: Mouse button ("left", "right", "middle").
+            mods: Modifiers ("shift", "ctrl", "alt", "super").
+
+        Returns self for chaining.
+        """
+        await self._send_mouse(x, y, button, "press", mods)
+        await self._send_mouse(x, y, button, "release", mods)
+        return self
+
+    async def _send_mouse(
+        self,
+        x: float,
+        y: float,
+        button: str | None = None,
+        button_action: str | None = None,
+        mods: str | None = None,
+    ) -> None:
+        """Send a mouse event."""
+        payload: dict[str, Any] = {"surface_id": self.id, "x": x, "y": y}
+        if button is not None:
+            payload["button"] = button
+        if button_action is not None:
+            payload["button_action"] = button_action
+        if mods is not None:
+            payload["mods"] = mods
+        await self._ghostty._send_request("send_mouse", payload)
+
+    # === Refresh ===
+
+    async def refresh(self) -> Terminal:
+        """Refresh terminal metadata from server."""
+        surfaces = await self._ghostty._list_surfaces()
+        for s in surfaces:
+            if s.id == self.id:
+                self._surface = s
+                break
+        return self
+
+    def __repr__(self) -> str:
+        return f"Terminal(id={self.id!r}, title={self.title!r}, pwd={self.pwd!r})"
