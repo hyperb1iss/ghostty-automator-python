@@ -113,51 +113,116 @@ class Terminal:
             await self._ghostty._send_request("send_text", {"surface_id": self.id, "text": text})
         return self
 
-    async def press(self, key: str) -> Terminal:
-        """Press a key.
+    async def press(self, key: str, mods: str | None = None) -> Terminal:
+        """Press a key using native key events.
 
-        Common keys:
-            - "Enter" -> \\r
-            - "Tab" -> \\t
-            - "Escape" -> \\x1b
-            - "Backspace" -> \\x7f
-            - "Up", "Down", "Left", "Right" -> ANSI escape sequences
-            - "Ctrl+C" -> \\x03
+        Uses W3C key codes for reliable key input. Common keys:
+            - "Enter", "Tab", "Escape", "Backspace", "Delete"
+            - "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"
+            - "Home", "End", "PageUp", "PageDown"
+            - "F1" through "F12"
+            - "Space"
+            - Single letters: "KeyA" through "KeyZ"
+            - Digits: "Digit0" through "Digit9"
+
+        For modifier combinations, pass mods parameter:
+            >>> await terminal.press("KeyC", mods="ctrl")  # Ctrl+C
+            >>> await terminal.press("KeyS", mods="ctrl,shift")  # Ctrl+Shift+S
+
+        Legacy Ctrl+X syntax still works for convenience:
+            >>> await terminal.press("Ctrl+C")
+
+        Args:
+            key: W3C key code or legacy key name.
+            mods: Comma-separated modifiers: "shift", "ctrl", "alt", "super".
 
         Returns self for chaining.
         """
-        key_map = {
-            "Enter": "\r",
-            "Tab": "\t",
-            "Escape": "\x1b",
-            "Backspace": "\x7f",
-            "Delete": "\x1b[3~",
-            "Up": "\x1b[A",
-            "Down": "\x1b[B",
-            "Right": "\x1b[C",
-            "Left": "\x1b[D",
-            "Home": "\x1b[H",
-            "End": "\x1b[F",
-            "PageUp": "\x1b[5~",
-            "PageDown": "\x1b[6~",
-            "Ctrl+C": "\x03",
-            "Ctrl+D": "\x04",
-            "Ctrl+Z": "\x1a",
-            "Ctrl+L": "\x0c",
+        # Map friendly names to W3C key codes
+        w3c_key_map = {
+            # Navigation
+            "Enter": "Enter",
+            "Tab": "Tab",
+            "Escape": "Escape",
+            "Backspace": "Backspace",
+            "Delete": "Delete",
+            "Space": "Space",
+            # Arrow keys - accept both formats
+            "Up": "ArrowUp",
+            "Down": "ArrowDown",
+            "Left": "ArrowLeft",
+            "Right": "ArrowRight",
+            "ArrowUp": "ArrowUp",
+            "ArrowDown": "ArrowDown",
+            "ArrowLeft": "ArrowLeft",
+            "ArrowRight": "ArrowRight",
+            # Control keys
+            "Home": "Home",
+            "End": "End",
+            "PageUp": "PageUp",
+            "PageDown": "PageDown",
+            "Insert": "Insert",
         }
 
-        # Handle Ctrl+<key> pattern
-        if key.startswith("Ctrl+") and key not in key_map:
+        # Handle legacy Ctrl+<key> syntax
+        if key.startswith("Ctrl+"):
             char = key[5:].upper()
             if len(char) == 1 and "A" <= char <= "Z":
-                code = ord(char) - ord("A") + 1
-                text = chr(code)
+                key = f"Key{char}"
+                mods = "ctrl" if mods is None else f"ctrl,{mods}"
             else:
-                text = key
-        else:
-            text = key_map.get(key, key)
+                # Fallback to send_text for unknown Ctrl combinations
+                code = ord(char) - ord("A") + 1 if len(char) == 1 else 0
+                if code > 0:
+                    await self._ghostty._send_request(
+                        "send_text", {"surface_id": self.id, "text": chr(code)}
+                    )
+                    return self
 
-        await self._ghostty._send_request("send_text", {"surface_id": self.id, "text": text})
+        # Map to W3C key code
+        w3c_key = w3c_key_map.get(key, key)
+
+        # Send key event (press + release)
+        payload: dict[str, Any] = {"surface_id": self.id, "key": w3c_key, "action": "press"}
+        if mods:
+            payload["mods"] = mods
+        await self._ghostty._send_request("send_key", payload)
+
+        payload["action"] = "release"
+        await self._ghostty._send_request("send_key", payload)
+
+        return self
+
+    async def key_down(self, key: str, mods: str | None = None) -> Terminal:
+        """Press a key down (without releasing).
+
+        Useful for holding keys during other operations.
+
+        Args:
+            key: W3C key code.
+            mods: Modifiers.
+
+        Returns self for chaining.
+        """
+        payload: dict[str, Any] = {"surface_id": self.id, "key": key, "action": "press"}
+        if mods:
+            payload["mods"] = mods
+        await self._ghostty._send_request("send_key", payload)
+        return self
+
+    async def key_up(self, key: str, mods: str | None = None) -> Terminal:
+        """Release a key.
+
+        Args:
+            key: W3C key code.
+            mods: Modifiers.
+
+        Returns self for chaining.
+        """
+        payload: dict[str, Any] = {"surface_id": self.id, "key": key, "action": "release"}
+        if mods:
+            payload["mods"] = mods
+        await self._ghostty._send_request("send_key", payload)
         return self
 
     # === Reading Screen ===

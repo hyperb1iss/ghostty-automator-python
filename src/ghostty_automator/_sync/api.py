@@ -147,9 +147,22 @@ class Terminal:
         _run_sync(self._async_terminal.type(text, delay_ms=delay_ms))
         return self
 
-    def press(self, key: str) -> Terminal:
-        """Press a key."""
-        _run_sync(self._async_terminal.press(key))
+    def press(self, key: str, mods: str | None = None) -> Terminal:
+        """Press a key using native key events.
+
+        Uses W3C key codes. See async Terminal.press() for full documentation.
+        """
+        _run_sync(self._async_terminal.press(key, mods=mods))
+        return self
+
+    def key_down(self, key: str, mods: str | None = None) -> Terminal:
+        """Press a key down (without releasing)."""
+        _run_sync(self._async_terminal.key_down(key, mods=mods))
+        return self
+
+    def key_up(self, key: str, mods: str | None = None) -> Terminal:
+        """Release a key."""
+        _run_sync(self._async_terminal.key_up(key, mods=mods))
         return self
 
     # === Reading Screen ===
