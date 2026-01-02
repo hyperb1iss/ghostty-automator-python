@@ -116,33 +116,95 @@ class Cell:
     bold: bool = False
     italic: bool = False
     faint: bool = False
-    underline: bool = False
+    underline: int = 0  # 0=none, 1=single, 2=double, 3=curly, 4=dotted, 5=dashed
+    strikethrough: bool = False
+    inverse: bool = False
+
+
+@dataclass
+class Span:
+    """A span of consecutive characters with the same style."""
+
+    text: str
+    x: int
+    y: int
+    fg: str | None = None
+    bg: str | None = None
+    bold: bool = False
+    italic: bool = False
+    faint: bool = False
+    underline: int = 0
     strikethrough: bool = False
     inverse: bool = False
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Cell:
+    def from_dict(cls, data: dict[str, Any], y: int) -> Span:
+        """Parse span from JSON data."""
+        # Parse fg color - can be palette index or [r,g,b] array
+        fg = data.get("fg")
+        if fg is not None:
+            fg = _format_color(fg)
+
+        # Parse bg color
+        bg = data.get("bg")
+        if bg is not None:
+            bg = _format_color(bg)
+
         return cls(
-            char=data.get("char", " "),
+            text=data.get("t", ""),
             x=data.get("x", 0),
-            y=data.get("y", 0),
-            fg=data.get("fg"),
-            bg=data.get("bg"),
-            underline_color=data.get("underline_color"),
-            bold=data.get("bold", False),
-            italic=data.get("italic", False),
-            faint=data.get("faint", False),
-            underline=data.get("underline", False),
-            strikethrough=data.get("strikethrough", False),
-            inverse=data.get("inverse", False),
+            y=y,
+            fg=fg,
+            bg=bg,
+            bold=bool(data.get("b", 0)),
+            italic=bool(data.get("i", 0)),
+            faint=bool(data.get("f", 0)),
+            underline=data.get("u", 0),
+            strikethrough=bool(data.get("s", 0)),
+            inverse=bool(data.get("inv", 0)),
         )
+
+    def to_cells(self) -> list[Cell]:
+        """Expand span into individual cells."""
+        cells: list[Cell] = []
+        for i, char in enumerate(self.text):
+            cells.append(
+                Cell(
+                    char=char,
+                    x=self.x + i,
+                    y=self.y,
+                    fg=self.fg,
+                    bg=self.bg,
+                    bold=self.bold,
+                    italic=self.italic,
+                    faint=self.faint,
+                    underline=self.underline,
+                    strikethrough=self.strikethrough,
+                    inverse=self.inverse,
+                )
+            )
+        return cells
+
+
+def _format_color(color: int | list[int]) -> str:
+    """Format color as string from palette index or RGB array."""
+    if isinstance(color, int):
+        return f"palette({color})"
+    # color must be a list at this point
+    if len(color) == 3:
+        return f"rgb({color[0]},{color[1]},{color[2]})"
+    return str(color)
 
 
 @dataclass
 class ScreenCells:
-    """Screen content with structured cell data for TUI inspection."""
+    """Screen content with structured cell data for TUI inspection.
 
-    cells: list[Cell]
+    The internal representation uses spans for efficiency, but cells can be
+    accessed via the cells property for backward compatibility.
+    """
+
+    spans: list[Span]
     cursor_x: int
     cursor_y: int
     rows: int
@@ -150,12 +212,18 @@ class ScreenCells:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ScreenCells:
-        # Flatten rows array into cells list, adding y coordinate
-        cells: list[Cell] = []
+        """Parse from span-based JSON format.
+
+        Format: {
+            "rows": [{"spans": [{"x": 0, "t": "text", ...}], "wrap": bool}],
+            "cursor": {"x": 0, "y": 0},
+            "size": {"rows": 24, "cols": 80}
+        }
+        """
+        spans: list[Span] = []
         for y, row_data in enumerate(data.get("rows", [])):
-            for cell_data in row_data.get("cells", []):
-                cell_data["y"] = y
-                cells.append(Cell.from_dict(cell_data))
+            for span_data in row_data.get("spans", []):
+                spans.append(Span.from_dict(span_data, y))
 
         # Extract cursor position from nested object
         cursor = data.get("cursor", {})
@@ -168,28 +236,78 @@ class ScreenCells:
         cols = size.get("cols", 80)
 
         return cls(
-            cells=cells,
+            spans=spans,
             cursor_x=cursor_x,
             cursor_y=cursor_y,
             rows=rows,
             cols=cols,
         )
 
+    @property
+    def cells(self) -> list[Cell]:
+        """Expand all spans into individual cells (backward compat)."""
+        result: list[Cell] = []
+        for span in self.spans:
+            result.extend(span.to_cells())
+        return result
+
+    def spans_at_row(self, y: int) -> list[Span]:
+        """Get all spans in a row."""
+        return [s for s in self.spans if s.y == y]
+
     def cell_at(self, x: int, y: int) -> Cell | None:
         """Get cell at position, or None if not found."""
-        for cell in self.cells:
-            if cell.x == x and cell.y == y:
-                return cell
+        for span in self.spans:
+            if span.y != y:
+                continue
+            if span.x <= x < span.x + len(span.text):
+                # Found the span containing this x position
+                char_idx = x - span.x
+                return Cell(
+                    char=span.text[char_idx],
+                    x=x,
+                    y=y,
+                    fg=span.fg,
+                    bg=span.bg,
+                    bold=span.bold,
+                    italic=span.italic,
+                    faint=span.faint,
+                    underline=span.underline,
+                    strikethrough=span.strikethrough,
+                    inverse=span.inverse,
+                )
         return None
 
     def row(self, y: int) -> list[Cell]:
         """Get all cells in a row."""
-        return [c for c in self.cells if c.y == y]
+        cells: list[Cell] = []
+        for span in self.spans:
+            if span.y == y:
+                cells.extend(span.to_cells())
+        return sorted(cells, key=lambda c: c.x)
 
     def text_at_row(self, y: int) -> str:
-        """Get text content of a row."""
-        row_cells = sorted(self.row(y), key=lambda c: c.x)
-        return "".join(c.char for c in row_cells)
+        """Get text content of a row (efficient span-based)."""
+        row_spans = sorted(self.spans_at_row(y), key=lambda s: s.x)
+        return "".join(s.text for s in row_spans)
+
+    def styled_spans(self, **filters: Any) -> list[Span]:
+        """Find spans matching style filters.
+
+        Example:
+            >>> cells.styled_spans(bold=True)  # All bold spans
+            >>> cells.styled_spans(fg="rgb(255,0,0)")  # Red foreground
+        """
+        result: list[Span] = []
+        for span in self.spans:
+            match = True
+            for attr, value in filters.items():
+                if getattr(span, attr, None) != value:
+                    match = False
+                    break
+            if match:
+                result.append(span)
+        return result
 
     def styled_cells(self, **filters: Any) -> list[Cell]:
         """Find cells matching style filters.
@@ -199,14 +317,8 @@ class ScreenCells:
             >>> cells.styled_cells(fg="rgb(255,0,0)")  # Red foreground
         """
         result: list[Cell] = []
-        for cell in self.cells:
-            match = True
-            for attr, value in filters.items():
-                if getattr(cell, attr, None) != value:
-                    match = False
-                    break
-            if match:
-                result.append(cell)
+        for span in self.styled_spans(**filters):
+            result.extend(span.to_cells())
         return result
 
 

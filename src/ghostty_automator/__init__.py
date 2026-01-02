@@ -29,7 +29,7 @@ from ghostty_automator.errors import (
     IPCError,
     TimeoutError,
 )
-from ghostty_automator.protocol import Cell, Screen, ScreenCells, Surface, strip_ansi
+from ghostty_automator.protocol import Cell, Screen, ScreenCells, Span, Surface, strip_ansi
 
 __all__ = [
     "Cell",
@@ -39,6 +39,7 @@ __all__ = [
     "IPCError",
     "Screen",
     "ScreenCells",
+    "Span",
     "Surface",
     "Terminal",
     "TimeoutError",

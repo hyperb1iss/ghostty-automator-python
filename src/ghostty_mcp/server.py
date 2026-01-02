@@ -108,27 +108,42 @@ def _screen_to_dict(screen: Screen) -> dict[str, Any]:
 
 
 def _cells_to_dict(cells: ScreenCells) -> dict[str, Any]:
-    """Convert ScreenCells to dict for JSON serialization."""
+    """Convert ScreenCells to dict for JSON serialization (span-based)."""
+    # Group spans by row
+    rows_dict: dict[int, list[dict[str, Any]]] = {}
+    for span in cells.spans:
+        if span.y not in rows_dict:
+            rows_dict[span.y] = []
+        span_dict: dict[str, Any] = {"x": span.x, "t": span.text}
+        if span.fg:
+            span_dict["fg"] = span.fg
+        if span.bg:
+            span_dict["bg"] = span.bg
+        if span.bold:
+            span_dict["b"] = 1
+        if span.italic:
+            span_dict["i"] = 1
+        if span.faint:
+            span_dict["f"] = 1
+        if span.underline:
+            span_dict["u"] = span.underline
+        if span.strikethrough:
+            span_dict["s"] = 1
+        if span.inverse:
+            span_dict["inv"] = 1
+        rows_dict[span.y].append(span_dict)
+
+    # Build rows array
+    max_row = max(rows_dict.keys()) if rows_dict else 0
+    rows: list[dict[str, Any]] = []
+    for y in range(max_row + 1):
+        spans = rows_dict.get(y, [])
+        rows.append({"spans": spans})
+
     return {
-        "cells": [
-            {
-                "char": c.char,
-                "x": c.x,
-                "y": c.y,
-                "fg": c.fg,
-                "bg": c.bg,
-                "bold": c.bold,
-                "italic": c.italic,
-                "underline": c.underline,
-                "strikethrough": c.strikethrough,
-                "inverse": c.inverse,
-            }
-            for c in cells.cells
-        ],
-        "cursor_x": cells.cursor_x,
-        "cursor_y": cells.cursor_y,
-        "rows": cells.rows,
-        "cols": cells.cols,
+        "rows": rows,
+        "cursor": {"x": cells.cursor_x, "y": cells.cursor_y},
+        "size": {"rows": cells.rows, "cols": cells.cols},
     }
 
 

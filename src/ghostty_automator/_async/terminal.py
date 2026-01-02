@@ -188,7 +188,11 @@ class Terminal:
             press_payload["mods"] = mods
         await self._ghostty._send_request("send_key", press_payload)
 
-        release_payload: dict[str, Any] = {"surface_id": self.id, "key": w3c_key, "action": "release"}
+        release_payload: dict[str, Any] = {
+            "surface_id": self.id,
+            "key": w3c_key,
+            "action": "release",
+        }
         if mods:
             release_payload["mods"] = mods
         await self._ghostty._send_request("send_key", release_payload)

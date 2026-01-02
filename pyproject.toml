@@ -33,7 +33,7 @@ dependencies = [
 
 [project.optional-dependencies]
 mcp = [
-    "fastmcp>=2.0",
+    "fastmcp>=2.14,<3",
 ]
 
 [project.scripts]
