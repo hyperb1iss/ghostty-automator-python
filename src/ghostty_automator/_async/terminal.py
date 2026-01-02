@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ghostty_automator.errors import TimeoutError
-from ghostty_automator.protocol import DEFAULT_TIMEOUT_MS, Screen, Surface
+from ghostty_automator.protocol import DEFAULT_TIMEOUT_MS, Screen, ScreenCells, Surface
 
 if TYPE_CHECKING:
     from ghostty_automator._async.client import Ghostty
@@ -183,13 +183,15 @@ class Terminal:
         w3c_key = w3c_key_map.get(key, key)
 
         # Send key event (press + release)
-        payload: dict[str, Any] = {"surface_id": self.id, "key": w3c_key, "action": "press"}
+        press_payload: dict[str, Any] = {"surface_id": self.id, "key": w3c_key, "action": "press"}
         if mods:
-            payload["mods"] = mods
-        await self._ghostty._send_request("send_key", payload)
+            press_payload["mods"] = mods
+        await self._ghostty._send_request("send_key", press_payload)
 
-        payload["action"] = "release"
-        await self._ghostty._send_request("send_key", payload)
+        release_payload: dict[str, Any] = {"surface_id": self.id, "key": w3c_key, "action": "release"}
+        if mods:
+            release_payload["mods"] = mods
+        await self._ghostty._send_request("send_key", release_payload)
 
         return self
 
@@ -249,6 +251,38 @@ class Terminal:
     async def text(self) -> str:
         """Get the current screen text (shorthand for screen().text)."""
         return (await self.screen()).text
+
+    async def cells(self, screen_type: str = "viewport") -> ScreenCells:
+        """Get structured cell data for the screen.
+
+        Returns detailed cell information including styling (colors, bold, etc.)
+        for TUI automation and visual inspection.
+
+        Args:
+            screen_type: "viewport" for visible content, "screen" for full scrollback.
+
+        Returns:
+            ScreenCells object with cells, cursor position, and dimensions.
+
+        Example:
+            >>> cells = await terminal.cells()
+            >>> # Find all bold cells
+            >>> bold_cells = cells.styled_cells(bold=True)
+            >>> # Check specific cell color
+            >>> cell = cells.cell_at(0, 0)
+            >>> if cell and cell.fg == "rgb(255,0,0)":
+            ...     print("Red text at origin")
+        """
+        import json
+
+        response = await self._ghostty._send_request(
+            "get_screen", {"surface_id": self.id, "screen": screen_type, "format": "cells"}
+        )
+        data = response.get("data", {})
+        # The cells format returns JSON in the content field
+        cells_json = data.get("content", "{}")
+        cells_data = json.loads(cells_json)
+        return ScreenCells.from_dict(cells_data)
 
     # === Waiting ===
 

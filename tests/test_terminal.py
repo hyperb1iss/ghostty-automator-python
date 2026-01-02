@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import unittest.mock
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -112,46 +113,73 @@ class TestTerminalPress:
     async def test_press_enter(self, terminal, mock_ghostty):
         await terminal.press("Enter")
 
-        mock_ghostty._send_request.assert_called_once_with(
-            "send_text",
-            {"surface_id": "0x123456", "text": "\r"},
+        # press() sends both press and release events
+        assert mock_ghostty._send_request.call_count == 2
+        calls = mock_ghostty._send_request.call_args_list
+        assert calls[0] == unittest.mock.call(
+            "send_key", {"surface_id": "0x123456", "key": "Enter", "action": "press"}
+        )
+        assert calls[1] == unittest.mock.call(
+            "send_key", {"surface_id": "0x123456", "key": "Enter", "action": "release"}
         )
 
     @pytest.mark.asyncio
     async def test_press_tab(self, terminal, mock_ghostty):
         await terminal.press("Tab")
 
-        mock_ghostty._send_request.assert_called_once_with(
-            "send_text",
-            {"surface_id": "0x123456", "text": "\t"},
+        # press() sends both press and release events
+        assert mock_ghostty._send_request.call_count == 2
+        calls = mock_ghostty._send_request.call_args_list
+        assert calls[0] == unittest.mock.call(
+            "send_key", {"surface_id": "0x123456", "key": "Tab", "action": "press"}
+        )
+        assert calls[1] == unittest.mock.call(
+            "send_key", {"surface_id": "0x123456", "key": "Tab", "action": "release"}
         )
 
     @pytest.mark.asyncio
     async def test_press_ctrl_c(self, terminal, mock_ghostty):
         await terminal.press("Ctrl+C")
 
-        mock_ghostty._send_request.assert_called_once_with(
-            "send_text",
-            {"surface_id": "0x123456", "text": "\x03"},
+        # Ctrl+C uses send_key with mods
+        assert mock_ghostty._send_request.call_count == 2
+        calls = mock_ghostty._send_request.call_args_list
+        assert calls[0] == unittest.mock.call(
+            "send_key",
+            {"surface_id": "0x123456", "key": "KeyC", "action": "press", "mods": "ctrl"},
+        )
+        assert calls[1] == unittest.mock.call(
+            "send_key",
+            {"surface_id": "0x123456", "key": "KeyC", "action": "release", "mods": "ctrl"},
         )
 
     @pytest.mark.asyncio
     async def test_press_arrow_up(self, terminal, mock_ghostty):
         await terminal.press("Up")
 
-        mock_ghostty._send_request.assert_called_once_with(
-            "send_text",
-            {"surface_id": "0x123456", "text": "\x1b[A"},
+        assert mock_ghostty._send_request.call_count == 2
+        calls = mock_ghostty._send_request.call_args_list
+        assert calls[0] == unittest.mock.call(
+            "send_key", {"surface_id": "0x123456", "key": "ArrowUp", "action": "press"}
+        )
+        assert calls[1] == unittest.mock.call(
+            "send_key", {"surface_id": "0x123456", "key": "ArrowUp", "action": "release"}
         )
 
     @pytest.mark.asyncio
     async def test_press_dynamic_ctrl(self, terminal, mock_ghostty):
-        # Ctrl+A = 0x01
+        # Ctrl+A uses send_key with mods
         await terminal.press("Ctrl+A")
 
-        mock_ghostty._send_request.assert_called_once_with(
-            "send_text",
-            {"surface_id": "0x123456", "text": "\x01"},
+        assert mock_ghostty._send_request.call_count == 2
+        calls = mock_ghostty._send_request.call_args_list
+        assert calls[0] == unittest.mock.call(
+            "send_key",
+            {"surface_id": "0x123456", "key": "KeyA", "action": "press", "mods": "ctrl"},
+        )
+        assert calls[1] == unittest.mock.call(
+            "send_key",
+            {"surface_id": "0x123456", "key": "KeyA", "action": "release", "mods": "ctrl"},
         )
 
 

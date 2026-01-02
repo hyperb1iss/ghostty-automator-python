@@ -29,14 +29,16 @@ from ghostty_automator.errors import (
     IPCError,
     TimeoutError,
 )
-from ghostty_automator.protocol import Screen, Surface, strip_ansi
+from ghostty_automator.protocol import Cell, Screen, ScreenCells, Surface, strip_ansi
 
 __all__ = [
+    "Cell",
     "ConnectionError",
     "Ghostty",
     "GhosttyError",
     "IPCError",
     "Screen",
+    "ScreenCells",
     "Surface",
     "Terminal",
     "TimeoutError",

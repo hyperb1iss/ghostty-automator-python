@@ -23,7 +23,7 @@ from typing import Any, Self, TypeVar
 
 from ghostty_automator._async import client as async_client, terminal as async_terminal
 from ghostty_automator._async.expect import TerminalExpect as AsyncTerminalExpect
-from ghostty_automator.protocol import DEFAULT_TIMEOUT_MS, Screen
+from ghostty_automator.protocol import DEFAULT_TIMEOUT_MS, Screen, ScreenCells
 
 T = TypeVar("T")
 
@@ -174,6 +174,13 @@ class Terminal:
     def text(self) -> str:
         """Get the current screen text."""
         return _run_sync(self._async_terminal.text())
+
+    def cells(self, screen_type: str = "viewport") -> ScreenCells:
+        """Get structured cell data for the screen.
+
+        See async Terminal.cells() for full documentation.
+        """
+        return _run_sync(self._async_terminal.cells(screen_type=screen_type))
 
     # === Waiting ===
 
