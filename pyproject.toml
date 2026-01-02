@@ -31,6 +31,14 @@ dependencies = [
     "anyio>=4.0",
 ]
 
+[project.optional-dependencies]
+mcp = [
+    "fastmcp>=2.0",
+]
+
+[project.scripts]
+ghostty-mcp = "ghostty_mcp.server:main"
+
 [project.urls]
 Homepage = "https://github.com/hyperb1iss/ghostty-automator"
 Documentation = "https://hyperb1iss.github.io/ghostty-automator"
@@ -42,7 +50,7 @@ Issues = "https://github.com/hyperb1iss/ghostty-automator/issues"
 # ============================================================================
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/ghostty_automator"]
+packages = ["src/ghostty_automator", "src/ghostty_mcp"]
 
 [tool.hatch.build.targets.sdist]
 include = ["/src", "/tests", "/README.md", "/LICENSE"]
@@ -119,9 +127,15 @@ ignore = [
 "examples/**/*.py" = [
     "T201",    # Print statements are the point of examples
 ]
+"src/ghostty_mcp/server.py" = [
+    "C901",    # Complexity expected in supertool design
+    "PLR0911", # Many returns expected in action switch
+    "PLR0912", # Many branches expected in action switch
+    "PLR0915", # Many statements expected in action switch
+]
 
 [tool.ruff.lint.isort]
-known-first-party = ["ghostty_automator"]
+known-first-party = ["ghostty_automator", "ghostty_mcp"]
 force-single-line = false
 combine-as-imports = true
 
@@ -176,7 +190,7 @@ show_missing = true
 # ============================================================================
 
 [tool.pyright]
-include = ["src"]
+include = ["src/ghostty_automator", "src/ghostty_mcp"]
 exclude = ["**/__pycache__", "tests"]
 pythonVersion = "3.11"
 typeCheckingMode = "strict"
